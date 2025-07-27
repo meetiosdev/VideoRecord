@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+/// Main application entry point for VideoRecord
 @main
 struct VideoRecordApp: App {
     var body: some Scene {
@@ -14,4 +15,4 @@ struct VideoRecordApp: App {
             ContentView()
         }
     }
-}
+} 

@@ -1,5 +1,5 @@
 //
-//  VideoRecorder.swift
+//  VideoRecordingService.swift
 //  VideoRecord
 //
 //  Created by Swarajmeet Singh on 25/07/25.
@@ -8,48 +8,61 @@
 import UIKit
 import AVFoundation
 import Photos
-import Combine
 
-enum VideoRecorderError: Error {
-    case cameraNotAvailable
-    case permissionDenied
-    case recordingFailed
-    case recordingTooShort
-    case recordingTooLong
-    case unknown
-}
-
-class VideoRecorder: NSObject, ObservableObject {
+/// Service responsible for handling video recording operations
+@MainActor
+final class VideoRecordingService: NSObject, ObservableObject {
+    /// Current recording state
     @Published var isRecording = false
+    
+    /// URL of the recorded video
     @Published var recordedVideoURL: URL?
+    
+    /// Error message if recording fails
     @Published var errorMessage: String?
+    
+    /// Duration of the current recording
     @Published var recordingDuration: TimeInterval = 0
+    
+    /// Whether recording can be stopped
     @Published var canStopRecording = false
     
-    private var completionHandler: ((Result<URL, VideoRecorderError>) -> Void)?
-    private var recordingStartTime: Date?
-    private var recordingTimer: Timer?
-    
-    // Recording time limits
+    /// Minimum recording duration in seconds
     private let minRecordingTime: TimeInterval = 5.0
+    
+    /// Maximum recording duration in seconds
     private let maxRecordingTime: TimeInterval = 60.0
+    
+    /// Completion handler for recording operations
+    private var completionHandler: ((Result<URL, VideoRecordingError>) -> Void)?
+    
+    /// Start time of the current recording
+    private var recordingStartTime: Date?
+    
+    /// Timer for tracking recording duration
+    private var recordingTimer: Timer?
     
     override init() {
         super.init()
     }
     
-    func startRecording(from viewController: UIViewController, completion: @escaping (Result<URL, VideoRecorderError>) -> Void) {
+    /// Starts video recording using native camera
+    /// - Parameters:
+    ///   - viewController: The view controller to present the camera from
+    ///   - completion: Completion handler called with the result
+    func startRecording(
+        from viewController: UIViewController,
+        completion: @escaping (Result<URL, VideoRecordingError>) -> Void
+    ) {
         self.completionHandler = completion
         
-        // Check camera availability
         guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
             completion(.failure(.cameraNotAvailable))
             return
         }
         
-        // Check camera permission
         checkCameraPermission { [weak self] granted in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 if granted {
                     self?.openNativeCamera(from: viewController)
                 } else {
@@ -59,6 +72,8 @@ class VideoRecorder: NSObject, ObservableObject {
         }
     }
     
+    /// Checks camera permission status
+    /// - Parameter completion: Completion handler with permission result
     private func checkCameraPermission(completion: @escaping (Bool) -> Void) {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
@@ -74,6 +89,8 @@ class VideoRecorder: NSObject, ObservableObject {
         }
     }
     
+    /// Opens the native camera interface
+    /// - Parameter viewController: The view controller to present from
     private func openNativeCamera(from viewController: UIViewController) {
         let imagePicker = UIImagePickerController()
         imagePicker.sourceType = .camera
@@ -85,19 +102,26 @@ class VideoRecorder: NSObject, ObservableObject {
         viewController.present(imagePicker, animated: true)
     }
     
+    /// Validates the recording duration against constraints
+    /// - Parameter duration: The duration to validate
+    /// - Returns: Whether the duration is valid
     private func validateRecordingDuration(_ duration: TimeInterval) -> Bool {
         return duration >= minRecordingTime && duration <= maxRecordingTime
     }
 }
 
 // MARK: - UIImagePickerControllerDelegate
-extension VideoRecorder: UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-        picker.dismiss(animated: true) {
+extension VideoRecordingService: UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+    func imagePickerController(
+        _ picker: UIImagePickerController,
+        didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+    ) {
+        picker.dismiss(animated: true) { [weak self] in
+            guard let self = self else { return }
+            
                             if let mediaURL = info[.mediaURL] as? URL {
-                    // Get video duration
                     let asset = AVURLAsset(url: mediaURL)
-                    let duration = CMTimeGetSeconds(asset.duration)
+                    let duration = CMTimeGetSeconds(asset.duration) // Using deprecated API for compatibility
                 
                 if self.validateRecordingDuration(duration) {
                     self.recordedVideoURL = mediaURL
@@ -119,8 +143,8 @@ extension VideoRecorder: UIImagePickerControllerDelegate, UINavigationController
     }
     
     func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-        picker.dismiss(animated: true) {
-            self.completionHandler?(.failure(.unknown))
+        picker.dismiss(animated: true) { [weak self] in
+            self?.completionHandler?(.failure(.unknown))
         }
     }
 } 
