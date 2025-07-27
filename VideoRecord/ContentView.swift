@@ -32,6 +32,11 @@ struct ContentView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
+                    
+                    Text("Recording time: 5-60 seconds")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
                 }
                 .padding(.top, 50)
                 
@@ -105,6 +110,10 @@ struct ContentView: View {
                         alertMessage = "Camera permission is required. Please enable it in Settings."
                     case .recordingFailed:
                         alertMessage = "Failed to record video. Please try again."
+                    case .recordingTooShort:
+                        alertMessage = "Recording too short! Please record for at least 5 seconds."
+                    case .recordingTooLong:
+                        alertMessage = "Recording too long! Maximum duration is 60 seconds."
                     case .unknown:
                         alertMessage = "An unknown error occurred."
                     }

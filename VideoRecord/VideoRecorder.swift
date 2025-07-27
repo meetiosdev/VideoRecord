@@ -8,11 +8,14 @@
 import UIKit
 import AVFoundation
 import Photos
+import Combine
 
 enum VideoRecorderError: Error {
     case cameraNotAvailable
     case permissionDenied
     case recordingFailed
+    case recordingTooShort
+    case recordingTooLong
     case unknown
 }
 
@@ -20,9 +23,16 @@ class VideoRecorder: NSObject, ObservableObject {
     @Published var isRecording = false
     @Published var recordedVideoURL: URL?
     @Published var errorMessage: String?
+    @Published var recordingDuration: TimeInterval = 0
+    @Published var canStopRecording = false
     
-    private var imagePickerController: UIImagePickerController?
     private var completionHandler: ((Result<URL, VideoRecorderError>) -> Void)?
+    private var recordingStartTime: Date?
+    private var recordingTimer: Timer?
+    
+    // Recording time limits
+    private let minRecordingTime: TimeInterval = 5.0
+    private let maxRecordingTime: TimeInterval = 60.0
     
     override init() {
         super.init()
@@ -41,7 +51,7 @@ class VideoRecorder: NSObject, ObservableObject {
         checkCameraPermission { [weak self] granted in
             DispatchQueue.main.async {
                 if granted {
-                    self?.openCamera(from: viewController)
+                    self?.openNativeCamera(from: viewController)
                 } else {
                     completion(.failure(.permissionDenied))
                 }
@@ -64,18 +74,19 @@ class VideoRecorder: NSObject, ObservableObject {
         }
     }
     
-    private func openCamera(from viewController: UIViewController) {
-        let picker = UIImagePickerController()
-        picker.sourceType = .camera
-        picker.mediaTypes = ["public.movie"]
-        picker.cameraCaptureMode = .video
-        picker.videoQuality = .typeHigh
-        picker.videoMaximumDuration = 60 // 60 seconds max
-        picker.allowsEditing = false
-        picker.delegate = self
-        
-        self.imagePickerController = picker
-        viewController.present(picker, animated: true)
+    private func openNativeCamera(from viewController: UIViewController) {
+        let imagePicker = UIImagePickerController()
+        imagePicker.sourceType = .camera
+        imagePicker.mediaTypes = ["public.movie"]
+        imagePicker.videoQuality = .typeHigh
+        imagePicker.videoMaximumDuration = maxRecordingTime
+        imagePicker.delegate = self
+        imagePicker.modalPresentationStyle = .fullScreen
+        viewController.present(imagePicker, animated: true)
+    }
+    
+    private func validateRecordingDuration(_ duration: TimeInterval) -> Bool {
+        return duration >= minRecordingTime && duration <= maxRecordingTime
     }
 }
 
@@ -83,9 +94,24 @@ class VideoRecorder: NSObject, ObservableObject {
 extension VideoRecorder: UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
         picker.dismiss(animated: true) {
-            if let videoURL = info[.mediaURL] as? URL {
-                self.recordedVideoURL = videoURL
-                self.completionHandler?(.success(videoURL))
+                            if let mediaURL = info[.mediaURL] as? URL {
+                    // Get video duration
+                    let asset = AVURLAsset(url: mediaURL)
+                    let duration = CMTimeGetSeconds(asset.duration)
+                
+                if self.validateRecordingDuration(duration) {
+                    self.recordedVideoURL = mediaURL
+                    self.completionHandler?(.success(mediaURL))
+                } else {
+                    // Delete invalid recording
+                    try? FileManager.default.removeItem(at: mediaURL)
+                    
+                    if duration < self.minRecordingTime {
+                        self.completionHandler?(.failure(.recordingTooShort))
+                    } else {
+                        self.completionHandler?(.failure(.recordingTooLong))
+                    }
+                }
             } else {
                 self.completionHandler?(.failure(.recordingFailed))
             }
