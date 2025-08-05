@@ -22,163 +22,177 @@ struct VideoTransferable: Transferable {
             
             print("📹 Gallery Video Import: Starting import process")
             print("📹 Gallery Video Import: Original file path: \(received.file.path())")
-            print("📹 Gallery Video Import: Copy file path: \(copy.path())")
+            print("📹 Gallery Video Import: Copy file path: \(copy.path)")
             
-            if FileManager.default.fileExists(atPath: copy.path()) {
+            if FileManager.default.fileExists(atPath: copy.path) {
                 try FileManager.default.removeItem(at: copy)
             }
             
             try FileManager.default.copyItem(at: received.file, to: copy)
-            print("📹 Gallery Video Import: Successfully copied video to: \(copy.path())")
-            return Self.init(url: copy)
+            print("📹 Gallery Video Import: Successfully copied video")
+            
+            return VideoTransferable(url: copy)
         }
     }
 }
 
 struct ContentView: View {
-    /// ViewModel for managing video recording state
     @StateObject private var viewModel = VideoRecordingViewModel()
     @State private var selectedGalleryItem: PhotosPickerItem? = nil
     @State private var galleryVideoURL: URL? = nil
     @State private var pickerDuration: TimeInterval = 0
     @State private var isPickerActive = false
+    @State private var showingVideoPicker = false
+    @State private var showingVideoPlayer = false
+    @State private var selectedVideoForPlayback: URL? = nil
     
     var body: some View {
         NavigationView {
             VStack(spacing: 30) {
-                headerSection
-                Spacer()
-                recordButtonSection
-                galleryPickerSection
-                videoPlayerSection
+                // Header Section
+                VStack(spacing: 10) {
+                    Image(systemName: "video.circle.fill")
+                        .font(.system(size: 60))
+                        .foregroundColor(.blue)
+                    
+                    Text("Video Recorder")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    
+                    Text("Record or pick videos from your gallery")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                
+                // Record Button Section
+                VStack(spacing: 15) {
+                    Button(action: {
+                        print("📹 ContentView: Record button tapped")
+                        viewModel.startRecording()
+                    }) {
+                        HStack {
+                            Image(systemName: "record.circle")
+                                .font(.title2)
+                            Text("Record Video")
+                                .font(.headline)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.red)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                    }
+                    .disabled(viewModel.isRecording)
+                    
+                    if viewModel.isRecording {
+                        Text("Recording: \(String(format: "%.1f", viewModel.recordingDuration))s")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+                
+                // Gallery Picker Section
+                VStack(spacing: 15) {
+                    Button(action: {
+                        print("📹 ContentView: Gallery picker button tapped")
+                        chooseVideoFromGallery()
+                    }) {
+                        HStack {
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.title2)
+                            Text("Pick Video from Gallery")
+                                .font(.headline)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.green)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                    }
+                    
+                    if isPickerActive {
+                        Text("Picker Active: \(String(format: "%.1f", pickerDuration))s")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
+                }
+                
+                // Video Player Section
+                if let url = galleryVideoURL {
+                    VStack(spacing: 10) {
+                        VideoPlayer(player: AVPlayer(url: url))
+                            .frame(height: 200)
+                            .cornerRadius(10)
+                            .padding(.horizontal)
+                        
+                        Button(action: {
+                            selectedVideoForPlayback = url
+                            showingVideoPlayer = true
+                        }) {
+                            HStack {
+                                Image(systemName: "play.circle.fill")
+                                    .font(.title2)
+                                Text("Play Video in Full Screen")
+                                    .font(.headline)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
+                        }
+                    }
+                }
+                
+                // Recorded Video Section
+                if let url = viewModel.recordedVideoURL {
+                    VStack(spacing: 10) {
+                        VideoPlayer(player: AVPlayer(url: url))
+                            .frame(height: 200)
+                            .cornerRadius(10)
+                            .padding(.horizontal)
+                        
+                        Button(action: {
+                            selectedVideoForPlayback = url
+                            showingVideoPlayer = true
+                        }) {
+                            HStack {
+                                Image(systemName: "play.circle.fill")
+                                    .font(.title2)
+                                Text("Play Recorded Video in Full Screen")
+                                    .font(.headline)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.orange)
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
+                        }
+                    }
+                }
+                
                 Spacer()
             }
             .padding()
             .navigationTitle("Video Recorder")
-        }
-    }
-    
-    // MARK: - UI Components
-    
-    private var headerSection: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "video.circle.fill")
-                .font(.system(size: 60))
-                .foregroundColor(.blue)
-            
-            Text("Video Recorder")
-                .font(.title)
-                .fontWeight(.bold)
-            
-            Text("Record or pick videos from your gallery")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-        }
-    }
-    
-    private var recordButtonSection: some View {
-        VStack(spacing: 20) {
-            Button(action: {
-                if viewModel.isRecording {
-                    viewModel.stopRecording()
-                } else {
-                    viewModel.startRecording()
+            .sheet(isPresented: $viewModel.showingVideoRecorder) {
+                VideoRecorderView(
+                    recordingService: VideoRecordingService()
+                ) { result in
+                    viewModel.handleRecordingCompletion(result)
                 }
-            }) {
-                HStack {
-                    Image(systemName: viewModel.isRecording ? "stop.circle.fill" : "record.circle")
-                        .font(.title2)
-                    Text(viewModel.isRecording ? "Stop Recording" : "Start Recording")
-                        .fontWeight(.semibold)
+            }
+            .alert("Video Recorder", isPresented: $viewModel.showingAlert) {
+                Button("OK") {
+                    viewModel.dismissAlert()
                 }
-                .foregroundColor(.white)
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(viewModel.isRecording ? Color.red : Color.blue)
-                .cornerRadius(12)
+            } message: {
+                Text(viewModel.alertMessage)
             }
-            
-            if viewModel.isRecording {
-                Text("Recording: \(String(format: "%.1f", viewModel.recordingDuration))s")
-                    .font(.caption)
-                    .foregroundColor(.red)
-            }
-        }
-    }
-    
-    private var galleryPickerSection: some View {
-        VStack(spacing: 15) {
-            Button(action: {
-                print("📹 Gallery Picker: Button tapped")
-                chooseVideoFromGallery()
-            }) {
-                HStack {
-                    Image(systemName: "photo.on.rectangle")
-                        .font(.title2)
-                    Text("Pick Video from Gallery")
-                        .fontWeight(.semibold)
+            .fullScreenCover(isPresented: $showingVideoPlayer) {
+                if let videoURL = selectedVideoForPlayback {
+                    VideoPlayerView(videoURL: videoURL)
                 }
-                .foregroundColor(.white)
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color.green)
-                .cornerRadius(12)
-            }
-            
-            if isPickerActive {
-                Text("Picker Active: \(String(format: "%.1f", pickerDuration))s")
-                    .font(.caption)
-                    .foregroundColor(.green)
-            }
-            
-            if let url = galleryVideoURL {
-                Text("Selected: \(url.lastPathComponent)")
-                    .font(.caption)
-                    .foregroundColor(.green)
-            }
-        }
-    }
-    
-    private var videoPlayerSection: some View {
-        VStack(spacing: 15) {
-            if let videoURL = viewModel.recordedVideoURL ?? galleryVideoURL {
-                VideoPlayer(player: AVPlayer(url: videoURL))
-                    .frame(height: 300)
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
-                
-                HStack {
-                    Button("Play") {
-                        // VideoPlayer handles play automatically
-                    }
-                    .foregroundColor(.blue)
-                    
-                    Spacer()
-                    
-                    Button("Clear") {
-                        viewModel.recordedVideoURL = nil
-                        galleryVideoURL = nil
-                    }
-                    .foregroundColor(.red)
-                }
-                .padding(.horizontal)
-            } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.gray.opacity(0.1))
-                    .frame(height: 300)
-                    .overlay(
-                        VStack {
-                            Image(systemName: "video.slash")
-                                .font(.system(size: 40))
-                                .foregroundColor(.gray)
-                            Text("No video selected")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
-                    )
             }
         }
     }
@@ -190,13 +204,63 @@ struct ContentView: View {
         
         VideoPicker.shared.chooseVideo { videoURL in
             DispatchQueue.main.async {
+                self.isPickerActive = false
+                self.pickerDuration = 0
+                
                 if let videoURL = videoURL {
                     print("📹 ContentView: Video selected: \(videoURL)")
                     self.galleryVideoURL = videoURL
+                    
+                    // Auto-play the video in full screen
+                    self.selectedVideoForPlayback = videoURL
+                    self.showingVideoPlayer = true
                 } else {
                     print("📹 ContentView: No video selected or picker cancelled")
                 }
             }
+        } progress: { duration in
+            DispatchQueue.main.async {
+                self.isPickerActive = true
+                self.pickerDuration = duration
+            }
+        }
+    }
+}
+
+// MARK: - Video Player View
+
+struct VideoPlayerView: View {
+    let videoURL: URL
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        ZStack {
+            VideoPlayer(player: AVPlayer(url: videoURL))
+                .ignoresSafeArea()
+            
+            VStack {
+                HStack {
+                    Button(action: {
+                        dismiss()
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title)
+                            .foregroundColor(.white)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Circle())
+                    }
+                    .padding()
+                    
+                    Spacer()
+                }
+                
+                Spacer()
+            }
+        }
+        .onAppear {
+            // Auto-play the video
+            let player = AVPlayer(url: videoURL)
+            player.play()
         }
     }
 }
