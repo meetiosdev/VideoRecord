@@ -10,25 +10,27 @@ import UIKit
 
 /// ViewModel for video recording functionality
 @MainActor
-@Observable
-final class VideoRecordingViewModel {
+final class VideoRecordingViewModel: ObservableObject {
     /// Current recording state
-    var isRecording = false
+    @Published var isRecording = false
     
     /// URL of the recorded video
-    var recordedVideoURL: URL?
+    @Published var recordedVideoURL: URL?
     
     /// Error message if recording fails
-    var errorMessage: String?
+    @Published var errorMessage: String?
+    
+    /// Recording duration in seconds
+    @Published var recordingDuration: TimeInterval = 0
     
     /// Whether to show the video recorder
-    var showingVideoRecorder = false
+    @Published var showingVideoRecorder = false
     
     /// Whether to show an alert
-    var showingAlert = false
+    @Published var showingAlert = false
     
     /// Alert message to display
-    var alertMessage = ""
+    @Published var alertMessage = ""
     
     /// Recording service instance
     private let recordingService: VideoRecordingService
@@ -42,6 +44,11 @@ final class VideoRecordingViewModel {
     /// Starts the video recording process
     func startRecording() {
         showingVideoRecorder = true
+    }
+    
+    /// Stops the video recording process
+    func stopRecording() {
+        showingVideoRecorder = false
     }
     
     /// Handles the completion of video recording

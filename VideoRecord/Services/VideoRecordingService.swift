@@ -96,6 +96,7 @@ final class VideoRecordingService: NSObject, ObservableObject {
         imagePicker.sourceType = .camera
         imagePicker.mediaTypes = ["public.movie"]
         imagePicker.videoQuality = .typeHigh
+        imagePicker.allowsEditing = true
         imagePicker.videoMaximumDuration = maxRecordingTime
         imagePicker.delegate = self
         imagePicker.modalPresentationStyle = .fullScreen
@@ -119,9 +120,9 @@ extension VideoRecordingService: UIImagePickerControllerDelegate, UINavigationCo
         picker.dismiss(animated: true) { [weak self] in
             guard let self = self else { return }
             
-                            if let mediaURL = info[.mediaURL] as? URL {
-                    let asset = AVURLAsset(url: mediaURL)
-                    let duration = CMTimeGetSeconds(asset.duration) // Using deprecated API for compatibility
+            if let mediaURL = info[.mediaURL] as? URL {
+                let asset = AVURLAsset(url: mediaURL)
+                let duration = CMTimeGetSeconds(asset.duration) // Using deprecated API for compatibility
                 
                 if self.validateRecordingDuration(duration) {
                     self.recordedVideoURL = mediaURL
@@ -147,4 +148,4 @@ extension VideoRecordingService: UIImagePickerControllerDelegate, UINavigationCo
             self?.completionHandler?(.failure(.unknown))
         }
     }
-} 
+}

@@ -7,11 +7,41 @@
 
 import SwiftUI
 import AVKit
+import PhotosUI
+import UIKit
 
-/// Main content view for the video recording application
+/// Transferable type for handling video URLs from PhotosPicker
+struct VideoTransferable: Transferable {
+    let url: URL
+    
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { video in
+            SentTransferredFile(video.url)
+        } importing: { received in
+            let copy = URL.documentsDirectory.appending(path: "gallery_video_\(Date().timeIntervalSince1970).mp4")
+            
+            print("📹 Gallery Video Import: Starting import process")
+            print("📹 Gallery Video Import: Original file path: \(received.file.path())")
+            print("📹 Gallery Video Import: Copy file path: \(copy.path())")
+            
+            if FileManager.default.fileExists(atPath: copy.path()) {
+                try FileManager.default.removeItem(at: copy)
+            }
+            
+            try FileManager.default.copyItem(at: received.file, to: copy)
+            print("📹 Gallery Video Import: Successfully copied video to: \(copy.path())")
+            return Self.init(url: copy)
+        }
+    }
+}
+
 struct ContentView: View {
     /// ViewModel for managing video recording state
-    @State private var viewModel = VideoRecordingViewModel()
+    @StateObject private var viewModel = VideoRecordingViewModel()
+    @State private var selectedGalleryItem: PhotosPickerItem? = nil
+    @State private var galleryVideoURL: URL? = nil
+    @State private var pickerDuration: TimeInterval = 0
+    @State private var isPickerActive = false
     
     var body: some View {
         NavigationView {
@@ -19,29 +49,17 @@ struct ContentView: View {
                 headerSection
                 Spacer()
                 recordButtonSection
+                galleryPickerSection
                 videoPlayerSection
                 Spacer()
             }
             .padding()
-            .navigationBarHidden(true)
-        }
-        .sheet(isPresented: $viewModel.showingVideoRecorder) {
-            VideoRecorderView(
-                recordingService: VideoRecordingService()
-            ) { result in
-                viewModel.handleRecordingCompletion(result)
-            }
-        }
-        .alert("Video Recorder", isPresented: $viewModel.showingAlert) {
-            Button("OK") {
-                viewModel.dismissAlert()
-            }
-        } message: {
-            Text(viewModel.alertMessage)
+            .navigationTitle("Video Recorder")
         }
     }
     
-    /// Header section with app title and instructions
+    // MARK: - UI Components
+    
     private var headerSection: some View {
         VStack(spacing: 10) {
             Image(systemName: "video.circle.fill")
@@ -49,71 +67,136 @@ struct ContentView: View {
                 .foregroundColor(.blue)
             
             Text("Video Recorder")
-                .font(.largeTitle)
+                .font(.title)
                 .fontWeight(.bold)
             
-            Text("Tap the record button to start recording")
+            Text("Record or pick videos from your gallery")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-            
-            Text("Recording time: 5-60 seconds")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
         }
-        .padding(.top, 50)
     }
     
-    /// Record button section
     private var recordButtonSection: some View {
-        Button(action: {
-            viewModel.startRecording()
-        }) {
-            HStack {
-                Image(systemName: "video.fill")
-                    .font(.title2)
-                Text("Record Video")
-                    .font(.headline)
+        VStack(spacing: 20) {
+            Button(action: {
+                if viewModel.isRecording {
+                    viewModel.stopRecording()
+                } else {
+                    viewModel.startRecording()
+                }
+            }) {
+                HStack {
+                    Image(systemName: viewModel.isRecording ? "stop.circle.fill" : "record.circle")
+                        .font(.title2)
+                    Text(viewModel.isRecording ? "Stop Recording" : "Start Recording")
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.white)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(viewModel.isRecording ? Color.red : Color.blue)
+                .cornerRadius(12)
             }
-            .foregroundColor(.white)
-            .padding(.horizontal, 30)
-            .padding(.vertical, 15)
-            .background(
-                RoundedRectangle(cornerRadius: 25)
-                    .fill(Color.blue)
-                    .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 5)
-            )
+            
+            if viewModel.isRecording {
+                Text("Recording: \(String(format: "%.1f", viewModel.recordingDuration))s")
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
         }
-        .scaleEffect(viewModel.isRecording ? 0.95 : 1.0)
-        .animation(.easeInOut(duration: 0.2), value: viewModel.isRecording)
     }
     
-    /// Video player section for recorded videos
-    @ViewBuilder
-    private var videoPlayerSection: some View {
-        if let videoURL = viewModel.recordedVideoURL {
-            VStack(spacing: 15) {
-                Text("Recorded Video")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
-                VideoPlayer(player: AVPlayer(url: videoURL))
-                    .frame(height: 200)
-                    .cornerRadius(12)
-                    .shadow(radius: 5)
-                
-                Button("Play Video") {
-                    // Video will auto-play when shown
+    private var galleryPickerSection: some View {
+        VStack(spacing: 15) {
+            Button(action: {
+                print("📹 Gallery Picker: Button tapped")
+                chooseVideoFromGallery()
+            }) {
+                HStack {
+                    Image(systemName: "photo.on.rectangle")
+                        .font(.title2)
+                    Text("Pick Video from Gallery")
+                        .fontWeight(.semibold)
                 }
-                .foregroundColor(.blue)
+                .foregroundColor(.white)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.green)
+                .cornerRadius(12)
             }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 15)
-                    .fill(Color(.systemGray6))
-            )
-            .padding(.horizontal)
+            
+            if isPickerActive {
+                Text("Picker Active: \(String(format: "%.1f", pickerDuration))s")
+                    .font(.caption)
+                    .foregroundColor(.green)
+            }
+            
+            if let url = galleryVideoURL {
+                Text("Selected: \(url.lastPathComponent)")
+                    .font(.caption)
+                    .foregroundColor(.green)
+            }
+        }
+    }
+    
+    private var videoPlayerSection: some View {
+        VStack(spacing: 15) {
+            if let videoURL = viewModel.recordedVideoURL ?? galleryVideoURL {
+                VideoPlayer(player: AVPlayer(url: videoURL))
+                    .frame(height: 300)
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+                
+                HStack {
+                    Button("Play") {
+                        // VideoPlayer handles play automatically
+                    }
+                    .foregroundColor(.blue)
+                    
+                    Spacer()
+                    
+                    Button("Clear") {
+                        viewModel.recordedVideoURL = nil
+                        galleryVideoURL = nil
+                    }
+                    .foregroundColor(.red)
+                }
+                .padding(.horizontal)
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.gray.opacity(0.1))
+                    .frame(height: 300)
+                    .overlay(
+                        VStack {
+                            Image(systemName: "video.slash")
+                                .font(.system(size: 40))
+                                .foregroundColor(.gray)
+                            Text("No video selected")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                    )
+            }
+        }
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func chooseVideoFromGallery() {
+        print("📹 ContentView: Starting video picker")
+        
+        VideoPicker.shared.chooseVideo { videoURL in
+            DispatchQueue.main.async {
+                if let videoURL = videoURL {
+                    print("📹 ContentView: Video selected: \(videoURL)")
+                    self.galleryVideoURL = videoURL
+                } else {
+                    print("📹 ContentView: No video selected or picker cancelled")
+                }
+            }
         }
     }
 }
